@@ -44,6 +44,37 @@ def build_parser() -> argparse.ArgumentParser:
         help="UTF-8 text report path",
     )
 
+    compare_parser = subparsers.add_parser(
+        "compare-models",
+        help="Reindex and compare embedding models on the same benchmark",
+    )
+    compare_parser.add_argument(
+        "--model",
+        dest="models",
+        action="append",
+        default=None,
+        help=(
+            "Embedding model to compare; repeat for multiple models. "
+            "Defaults to multilingual-e5-small and multilingual-e5-base."
+        ),
+    )
+    compare_parser.add_argument(
+        "--cases",
+        default="benchmarks/retrieval_cases.yaml",
+        help="YAML file with retrieval benchmark cases",
+    )
+    compare_parser.add_argument(
+        "--top-k",
+        type=int,
+        default=20,
+        help="Search depth used for every model",
+    )
+    compare_parser.add_argument(
+        "--output-dir",
+        default="model_comparison_results",
+        help="Directory for UTF-8 per-model and comparison reports",
+    )
+
     return parser
 
 
@@ -72,6 +103,21 @@ def main() -> None:
             )
             print(report.render(), end="")
             print(f"UTF-8 report saved to: {args.output}")
+            return
+
+        if args.command == "compare-models":
+            from .model_compare import DEFAULT_MODELS, run_model_comparison
+
+            models = tuple(args.models) if args.models else DEFAULT_MODELS
+            report = run_model_comparison(
+                settings,
+                models=models,
+                cases_path=args.cases,
+                top_k=args.top_k,
+                output_dir=args.output_dir,
+            )
+            print(report.render(), end="")
+            print(f"UTF-8 comparison saved to: {args.output_dir}/comparison.txt")
             return
 
         from .search import search

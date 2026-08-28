@@ -9,7 +9,6 @@ import yaml
 
 if TYPE_CHECKING:
     from .config import Settings
-    from .search import SearchResult
 
 
 @dataclass(frozen=True)
@@ -56,6 +55,10 @@ class BenchmarkReport:
             return 0.0
         return sum(1 for item in self.results if item.rank is not None and item.rank <= k) / len(self.results)
 
+    @property
+    def miss_count(self) -> int:
+        return sum(1 for item in self.results if item.rank is None)
+
     def render(self) -> str:
         lines = [
             "Family KB retrieval benchmark",
@@ -98,7 +101,7 @@ class BenchmarkReport:
                 _format_hit_metric("Hit@3", self.hit_rate(3), total),
                 _format_hit_metric("Hit@5", self.hit_rate(5), total),
                 f"MRR: {self.mrr:.3f}",
-                f"Misses@{self.top_k}: {sum(1 for item in self.results if item.rank is None)}",
+                f"Misses@{self.top_k}: {self.miss_count}",
                 "",
                 "Hit@K means that at least one acceptable target for the case appeared in TOP K.",
             ]
@@ -175,18 +178,24 @@ def run_benchmark(
     cases_path: str | Path,
     top_k: int,
     output_path: str | Path,
+    embedder: Any | None = None,
+    store: Any | None = None,
 ) -> BenchmarkReport:
     if top_k <= 0:
         raise ValueError("benchmark top_k must be greater than 0")
 
-    from .embeddings import LocalEmbedder
-    from .qdrant_store import QdrantStore
+    if embedder is None:
+        from .embeddings import LocalEmbedder
+
+        embedder = LocalEmbedder(settings.embedding_model)
+    if store is None:
+        from .qdrant_store import QdrantStore
+
+        store = QdrantStore(settings.qdrant_url, settings.qdrant_collection)
+
     from .search import search_with_components
 
     cases = load_benchmark_cases(cases_path)
-    embedder = LocalEmbedder(settings.embedding_model)
-    store = QdrantStore(settings.qdrant_url, settings.qdrant_collection)
-
     evaluated: list[BenchmarkCaseResult] = []
     for case in cases:
         results = search_with_components(

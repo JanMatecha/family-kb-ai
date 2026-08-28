@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Sequence
 
 from .chunker import chunk_markdown
 from .config import Settings
@@ -45,6 +46,24 @@ def collect_chunks(settings: Settings, indexed_at: str) -> list[Chunk]:
     return chunks
 
 
+def index_chunks(
+    chunks: Sequence[Chunk],
+    *,
+    embedder: LocalEmbedder,
+    store: QdrantStore,
+    batch_size: int = 64,
+) -> None:
+    if batch_size <= 0:
+        raise ValueError("batch_size must be greater than 0")
+
+    store.recreate_collection(embedder.dimension)
+    for start in range(0, len(chunks), batch_size):
+        batch = chunks[start : start + batch_size]
+        texts = [chunk_embedding_text(chunk.section_path, chunk.text) for chunk in batch]
+        vectors = embedder.embed_chunks(texts)
+        store.upsert(batch, vectors)
+
+
 def ingest(settings: Settings, *, recreate: bool) -> tuple[int, int]:
     if not recreate:
         raise ValueError("V1 only supports explicit full reindex. Use ingest --recreate.")
@@ -54,14 +73,7 @@ def ingest(settings: Settings, *, recreate: bool) -> tuple[int, int]:
 
     embedder = LocalEmbedder(settings.embedding_model)
     store = QdrantStore(settings.qdrant_url, settings.qdrant_collection)
-    store.recreate_collection(embedder.dimension)
-
-    batch_size = 64
-    for start in range(0, len(chunks), batch_size):
-        batch = chunks[start : start + batch_size]
-        texts = [chunk_embedding_text(chunk.section_path, chunk.text) for chunk in batch]
-        vectors = embedder.embed_chunks(texts)
-        store.upsert(batch, vectors)
+    index_chunks(chunks, embedder=embedder, store=store)
 
     document_count = len({chunk.source_path for chunk in chunks})
     return document_count, len(chunks)

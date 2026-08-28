@@ -132,6 +132,64 @@ Metrics are deliberately simple:
 
 The benchmark loads the embedding model once for the whole run. This makes repeated retrieval tests faster and gives a reproducible baseline for later model/chunking comparisons.
 
+## Embedding model comparison (V1.1b)
+
+V1.1b compares embedding models while holding the knowledge base, chunking, benchmark cases, Qdrant search settings, and retrieval logic constant.
+
+Run the default comparison:
+
+```powershell
+family-kb compare-models
+```
+
+On Windows without virtual-environment activation:
+
+```powershell
+.\.venv\Scripts\family-kb.exe compare-models
+```
+
+The default models are:
+
+- `intfloat/multilingual-e5-small`
+- `intfloat/multilingual-e5-base`
+
+The command collects the Markdown chunks once, then creates a separate Qdrant collection for each model, re-embeds the same chunks, runs the same retrieval benchmark, and writes UTF-8 reports under:
+
+```text
+model_comparison_results/
+├── benchmark_multilingual_e5_small.txt
+├── benchmark_multilingual_e5_base.txt
+└── comparison.txt
+```
+
+For a configured baseline collection named `family_kb`, the experiment collections are:
+
+```text
+family_kb_cmp_multilingual_e5_small
+family_kb_cmp_multilingual_e5_base
+```
+
+The configured baseline collection itself is **not modified or deleted** by `compare-models`.
+
+`comparison.txt` contains Hit@1/3/5, MRR, misses, per-case ranks, and informational indexing/benchmark runtimes for each model. Lower rank and higher Hit@K/MRR are better; runtime is reported only to make the quality/cost trade-off visible.
+
+Custom models can be supplied by repeating `--model`:
+
+```powershell
+family-kb compare-models `
+  --model intfloat/multilingual-e5-small `
+  --model intfloat/multilingual-e5-base
+```
+
+Useful options:
+
+```powershell
+family-kb compare-models --top-k 30
+family-kb compare-models --output-dir my_model_test
+```
+
+The first run may download models that are not yet present in the local Hugging Face cache.
+
 ## Configuration
 
 `config.example.yaml` contains:
@@ -139,7 +197,7 @@ The benchmark loads the embedding model once for the whole run. This makes repea
 - `kb_path` – path to the external `RODINNE_KNOWHOW`
 - `qdrant_url` – local Qdrant URL
 - `qdrant_collection` – collection name, default `family_kb`
-- `embedding_model` – local sentence-transformers model
+- `embedding_model` – local sentence-transformers model used by normal ingest/search/benchmark
 - `chunk_size` – maximum approximate chunk length in characters
 - `chunk_overlap` – overlap when a long Markdown section must be split
 - `top_k` – default number of interactive search results
@@ -154,7 +212,7 @@ Unit tests do not load or download the embedding model and do not require a runn
 pytest
 ```
 
-They cover Markdown section hierarchy, long-section splitting, fenced-code handling, deterministic chunk IDs, configuration parsing, benchmark case parsing, acceptable-target matching, and benchmark metrics.
+They cover Markdown section hierarchy, long-section splitting, fenced-code handling, deterministic chunk IDs, configuration parsing, benchmark case parsing, acceptable-target matching, benchmark metrics, and model-comparison report helpers.
 
 ## Intentionally out of scope
 
