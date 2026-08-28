@@ -8,20 +8,45 @@ from .config import load_settings
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="family-kb")
-    parser.add_argument("--config", default="config.yaml", help="Path to YAML config file")
-    subparsers = parser.add_subparsers(dest="command", required=True)
+    parser.add_argument(
+        "--config",
+        default="config.yaml",
+        help="Path to YAML config file",
+    )
+    subparsers = parser.add_subparsers(
+        dest="command",
+        required=True,
+    )
 
-    ingest_parser = subparsers.add_parser("ingest", help="Index Markdown knowledge base")
+    ingest_parser = subparsers.add_parser(
+        "ingest",
+        help="Index Markdown knowledge base",
+    )
     ingest_parser.add_argument(
         "--recreate",
         action="store_true",
         help="Delete and rebuild the Qdrant collection from Markdown",
     )
 
-    search_parser = subparsers.add_parser("search", help="Semantic vector search")
-    search_parser.add_argument("query", help="Natural-language search query")
-    search_parser.add_argument("--top-k", type=int, default=None, help="Number of results")
-    search_parser.add_argument("--category", default=None, help="Optional category payload filter")
+    search_parser = subparsers.add_parser(
+        "search",
+        help="Semantic vector search",
+    )
+    search_parser.add_argument(
+        "query",
+        help="Natural-language search query",
+    )
+    search_parser.add_argument(
+        "--top-k",
+        type=int,
+        default=None,
+        help="Number of results",
+    )
+    search_parser.add_argument(
+        "--category",
+        default=None,
+        help="Optional category payload filter",
+    )
 
     benchmark_parser = subparsers.add_parser(
         "benchmark",
@@ -48,34 +73,60 @@ def build_parser() -> argparse.ArgumentParser:
         "compare-models",
         help="Reindex and compare embedding models on the same benchmark",
     )
-    compare_parser.add_argument(
+    _add_model_comparison_arguments(
+        compare_parser,
+        default_cases="benchmarks/retrieval_cases.yaml",
+        default_top_k=20,
+        default_output_dir="model_comparison_results",
+    )
+
+    diagnose_parser = subparsers.add_parser(
+        "diagnose-retrieval",
+        help="Deep TOP-100 retrieval diagnosis across different multilingual model families",
+    )
+    _add_model_comparison_arguments(
+        diagnose_parser,
+        default_cases="benchmarks/retrieval_cases_v11c.yaml",
+        default_top_k=100,
+        default_output_dir="retrieval_diagnostics",
+    )
+
+    return parser
+
+
+def _add_model_comparison_arguments(
+    parser: argparse.ArgumentParser,
+    *,
+    default_cases: str,
+    default_top_k: int,
+    default_output_dir: str,
+) -> None:
+    parser.add_argument(
         "--model",
         dest="models",
         action="append",
         default=None,
         help=(
             "Embedding model to compare; repeat for multiple models. "
-            "Defaults to multilingual-e5-small and multilingual-e5-base."
+            "Command-specific defaults are used when omitted."
         ),
     )
-    compare_parser.add_argument(
+    parser.add_argument(
         "--cases",
-        default="benchmarks/retrieval_cases.yaml",
+        default=default_cases,
         help="YAML file with retrieval benchmark cases",
     )
-    compare_parser.add_argument(
+    parser.add_argument(
         "--top-k",
         type=int,
-        default=20,
+        default=default_top_k,
         help="Search depth used for every model",
     )
-    compare_parser.add_argument(
+    parser.add_argument(
         "--output-dir",
-        default="model_comparison_results",
+        default=default_output_dir,
         help="Directory for UTF-8 per-model and comparison reports",
     )
-
-    return parser
 
 
 def main() -> None:
@@ -88,7 +139,10 @@ def main() -> None:
         if args.command == "ingest":
             from .ingest import ingest
 
-            documents, chunks = ingest(settings, recreate=args.recreate)
+            documents, chunks = ingest(
+                settings,
+                recreate=args.recreate,
+            )
             print(f"Indexed {documents} Markdown documents into {chunks} chunks.")
             return
 
@@ -105,16 +159,28 @@ def main() -> None:
             print(f"UTF-8 report saved to: {args.output}")
             return
 
-        if args.command == "compare-models":
-            from .model_compare import DEFAULT_MODELS, run_model_comparison
+        if args.command in {"compare-models", "diagnose-retrieval"}:
+            from .model_compare import (
+                DEFAULT_MODELS,
+                DIAGNOSTIC_MODELS,
+                run_model_comparison,
+            )
 
-            models = tuple(args.models) if args.models else DEFAULT_MODELS
+            if args.models:
+                models = tuple(args.models)
+            elif args.command == "diagnose-retrieval":
+                models = DIAGNOSTIC_MODELS
+            else:
+                models = DEFAULT_MODELS
+
+            collection_tag = "diag" if args.command == "diagnose-retrieval" else "cmp"
             report = run_model_comparison(
                 settings,
                 models=models,
                 cases_path=args.cases,
                 top_k=args.top_k,
                 output_dir=args.output_dir,
+                collection_tag=collection_tag,
             )
             print(report.render(), end="")
             print(f"UTF-8 comparison saved to: {args.output_dir}/comparison.txt")

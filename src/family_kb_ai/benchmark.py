@@ -13,7 +13,8 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class BenchmarkTarget:
-    source_path: str
+    source_path: str | None = None
+    source_endswith: str | None = None
     section_contains: str | None = None
     text_contains: str | None = None
 
@@ -48,16 +49,29 @@ class BenchmarkReport:
     def mrr(self) -> float:
         if not self.results:
             return 0.0
-        return sum(0.0 if item.rank is None else 1.0 / item.rank for item in self.results) / len(self.results)
+        return sum(
+            0.0 if item.rank is None else 1.0 / item.rank
+            for item in self.results
+        ) / len(self.results)
 
     def hit_rate(self, k: int) -> float:
         if not self.results:
             return 0.0
-        return sum(1 for item in self.results if item.rank is not None and item.rank <= k) / len(self.results)
+        return sum(
+            1
+            for item in self.results
+            if item.rank is not None and item.rank <= k
+        ) / len(self.results)
 
     @property
     def miss_count(self) -> int:
         return sum(1 for item in self.results if item.rank is None)
+
+    def metric_depths(self) -> tuple[int, ...]:
+        depths = [depth for depth in (1, 3, 5, 10, 20) if depth <= self.top_k]
+        if self.top_k not in depths:
+            depths.append(self.top_k)
+        return tuple(depths)
 
     def render(self) -> str:
         lines = [
@@ -93,13 +107,17 @@ class BenchmarkReport:
             lines.append("")
 
         total = len(self.results)
+        lines.extend(["METRICS", "======="])
+        for depth in self.metric_depths():
+            lines.append(
+                _format_hit_metric(
+                    f"Hit@{depth}",
+                    self.hit_rate(depth),
+                    total,
+                )
+            )
         lines.extend(
             [
-                "METRICS",
-                "=======",
-                _format_hit_metric("Hit@1", self.hit_rate(1), total),
-                _format_hit_metric("Hit@3", self.hit_rate(3), total),
-                _format_hit_metric("Hit@5", self.hit_rate(5), total),
                 f"MRR: {self.mrr:.3f}",
                 f"Misses@{self.top_k}: {self.miss_count}",
                 "",
@@ -135,20 +153,38 @@ def load_benchmark_cases(path: str | Path) -> list[BenchmarkCase]:
         if not query:
             raise ValueError(f"Benchmark case '{case_id}' is missing query")
         if not isinstance(raw_targets, list) or not raw_targets:
-            raise ValueError(f"Benchmark case '{case_id}' must define at least one target")
+            raise ValueError(
+                f"Benchmark case '{case_id}' must define at least one target"
+            )
 
         targets: list[BenchmarkTarget] = []
         for raw_target in raw_targets:
             if not isinstance(raw_target, dict):
                 raise ValueError(f"Targets for '{case_id}' must be mappings")
-            source_path = str(raw_target.get("source_path", "")).strip()
-            if not source_path:
-                raise ValueError(f"Target for '{case_id}' is missing source_path")
+            source_path = _optional_text(raw_target.get("source_path"))
+            source_endswith = _optional_text(raw_target.get("source_endswith"))
+            if not source_path and not source_endswith:
+                raise ValueError(
+                    f"Target for '{case_id}' must define source_path or source_endswith"
+                )
             targets.append(
                 BenchmarkTarget(
-                    source_path=source_path.replace("\\", "/"),
-                    section_contains=_optional_text(raw_target.get("section_contains")),
-                    text_contains=_optional_text(raw_target.get("text_contains")),
+                    source_path=(
+                        source_path.replace("\\", "/")
+                        if source_path
+                        else None
+                    ),
+                    source_endswith=(
+                        source_endswith.replace("\\", "/")
+                        if source_endswith
+                        else None
+                    ),
+                    section_contains=_optional_text(
+                        raw_target.get("section_contains")
+                    ),
+                    text_contains=_optional_text(
+                        raw_target.get("text_contains")
+                    ),
                 )
             )
 
@@ -159,7 +195,10 @@ def load_benchmark_cases(path: str | Path) -> list[BenchmarkCase]:
     return cases
 
 
-def evaluate_results(case: BenchmarkCase, results: Sequence[Any]) -> BenchmarkCaseResult:
+def evaluate_results(
+    case: BenchmarkCase,
+    results: Sequence[Any],
+) -> BenchmarkCaseResult:
     for rank, result in enumerate(results, start=1):
         if any(_matches(result, target) for target in case.targets):
             return BenchmarkCaseResult(
@@ -213,15 +252,22 @@ def run_benchmark(
         collection=settings.qdrant_collection,
         top_k=top_k,
         results=tuple(evaluated),
-        generated_at=datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds"),
+        generated_at=datetime.now(timezone.utc)
+        .astimezone()
+        .isoformat(timespec="seconds"),
     )
     Path(output_path).write_text(report.render(), encoding="utf-8")
     return report
 
 
 def _matches(result: Any, target: BenchmarkTarget) -> bool:
-    if _normalize_path(str(result.source_path)) != _normalize_path(target.source_path):
-        return False
+    result_path = _normalize_path(str(result.source_path))
+    if target.source_path:
+        if result_path != _normalize_path(target.source_path):
+            return False
+    if target.source_endswith:
+        if not result_path.endswith(_normalize_path(target.source_endswith)):
+            return False
 
     if target.section_contains:
         section = " > ".join(result.section_path)

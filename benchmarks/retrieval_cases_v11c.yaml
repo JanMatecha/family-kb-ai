@@ -1,0 +1,125 @@
+cases:
+  - id: hose_exact_terms
+    query: "černá 16mm hadice jde obtížně nasadit na fitinky"
+    targets: &hose_targets
+      - source_path: "02_ZAHRADA/01_ZAVLAZOVACI_SYSTEM/01_NAVRH/SOUHRN_NAVRHU.md"
+        section_contains: "11. Stav realizace"
+        text_contains: "nasazovani cerne 16mm hadice"
+      - source_path: "02_ZAHRADA/02_ZAHONY/SOUHRN_ZAHONU.md"
+        section_contains: "Realizace"
+        text_contains: "nasazování černé 16mm hadice"
+
+  - id: hose_paraphrase_pipe_connector
+    query: "co dělat když nejde trubka nasunout na spojku?"
+    targets: *hose_targets
+
+  - id: hose_paraphrase_warm
+    query: "jak změkčit hadici při montáži?"
+    targets: *hose_targets
+
+  - id: hose_paraphrase_hose_connector
+    query: "co dělat když nejde hadice nasunout na spojku?"
+    targets: *hose_targets
+
+  - id: beds_count
+    query: "kolik máme na zahradě evidovaných záhonů?"
+    targets:
+      - source_path: "02_ZAHRADA/02_ZAHONY/SOUHRN_ZAHONU.md"
+        section_contains: "Aktuální stav"
+        text_contains: "10 záhonů"
+
+  - id: beds_west_zone
+    query: "které záhony patří do západní zavlažovací zóny?"
+    targets:
+      - source_path: "02_ZAHRADA/02_ZAHONY/SOUHRN_ZAHONU.md"
+        section_contains: "Aktuální stav"
+        text_contains: "E, F, G, H, I, J"
+      - source_path: "02_ZAHRADA/02_ZAHONY/SOUHRN_ZAHONU.md"
+        section_contains: "Rozdělení do zón"
+        text_contains: "E–J"
+
+  - id: beds_largest
+    query: "který záhon je největší?"
+    targets:
+      - source_path: "02_ZAHRADA/02_ZAHONY/SOUHRN_ZAHONU.md"
+        section_contains: "Přehled záhonů"
+        text_contains: "největší evidovaný záhon"
+
+  - id: irrigation_row_spacing
+    query: "jak daleko od sebe mají být kapkovací řádky?"
+    targets:
+      - source_path: "02_ZAHRADA/01_ZAVLAZOVACI_SYSTEM/01_NAVRH/SOUHRN_NAVRHU.md"
+        section_contains: "5. Roztec kapkovacich radku"
+        text_contains: "30 cm"
+      - source_path: "02_ZAHRADA/02_ZAHONY/SOUHRN_ZAHONU.md"
+        section_contains: "Společná pravidla a parametry"
+        text_contains: "30 cm"
+
+  - id: irrigation_hose_type
+    query: "jaký typ kapkovací hadice jsme nakonec vybrali?"
+    targets:
+      - source_path: "02_ZAHRADA/01_ZAVLAZOVACI_SYSTEM/01_NAVRH/SOUHRN_NAVRHU.md"
+        section_contains: "4. Kapkovaci hadice"
+        text_contains: "EHCLB162-33-100"
+
+  - id: irrigation_water_source
+    query: "odkud bereme vodu pro zavlažování?"
+    targets:
+      - source_path: "02_ZAHRADA/01_ZAVLAZOVACI_SYSTEM/01_NAVRH/SOUHRN_NAVRHU.md"
+        section_contains: "2. Zdroj vody a provozni princip"
+        text_contains: "2× IBC nadrze po 1000 l"
+
+  - id: irrigation_gravity
+    query: "má samotná závlaha běžet přes čerpadlo nebo samospádem?"
+    targets:
+      - source_path: "02_ZAHRADA/01_ZAVLAZOVACI_SYSTEM/01_NAVRH/SOUHRN_NAVRHU.md"
+        section_contains: "2. Zdroj vody a provozni princip"
+        text_contains: "samospadem"
+
+  - id: irrigation_modelica
+    query: "co chceme ověřovat fyzikálním modelem zavlažování v Modelice?"
+    targets:
+      - source_path: "02_ZAHRADA/01_ZAVLAZOVACI_SYSTEM/01_NAVRH/SOUHRN_NAVRHU.md"
+        section_contains: "14. Fyzikalni model"
+        text_contains: "tlakove ztraty"
+
+  - id: house_ladder_everyday
+    query: "jaký žebřík chceme používat pro běžné práce kolem domu?"
+    targets:
+      - source_endswith: "SOUHRN_ZEBRIKU.md"
+        section_contains: "Aktuální pracovní rozhodnutí"
+        text_contains: "KRAUSE Monto-Profi Tribilo 3×10"
+
+  - id: house_ladder_roof_peak
+    query: "co máme použít, když potřebujeme pracovat až u hřebene domu?"
+    targets:
+      - source_endswith: "SOUHRN_ZEBRIKU.md"
+        section_contains: "Aktuální pracovní rozhodnutí"
+        text_contains: "půjčený žebřík 3×12"
+
+  - id: house_ladder_working_height
+    query: "znamená pracovní výška 7,65 m, že žebřík fyzicky sahá tak vysoko?"
+    targets:
+      - source_endswith: "SOUHRN_ZEBRIKU.md"
+        section_contains: "Praktický dosah pro tento dům"
+        text_contains: "neznamená"
+
+  - id: codex_repository_authority
+    query: "podle čeho máme připravovat další významný úkol pro Codex?"
+    targets:
+      - source_endswith: "KREDITOVE_EFEKTIVNI_PRACE.md"
+        section_contains: "Aktuální stav repozitáře je autorita"
+
+  - id: codex_task_size
+    query: "máme velikost úkolu pro Codex posuzovat podle počtu souborů?"
+    targets:
+      - source_endswith: "KREDITOVE_EFEKTIVNI_PRACE.md"
+        section_contains: "Základní princip"
+        text_contains: "Velikost úkolu neposuzuj primárně podle počtu souborů"
+
+  - id: bookbinding_supplier_authority
+    query: "kde je autoritativní seznam dodavatelů pro knihařskou dílnu?"
+    targets:
+      - source_endswith: "DODAVATELE_A_SERVIS.md"
+        section_contains: "1. Co je autoritativní"
+        text_contains: "jediný autoritativní provozní katalog"

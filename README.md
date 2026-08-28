@@ -20,7 +20,7 @@ vector search / retrieval benchmark from CLI
 
 **Markdown is the source of truth. Qdrant is only a rebuildable search index.** The knowledge base itself is not stored in this repository. Qdrant can be deleted and rebuilt from the Markdown files at any time.
 
-The default embedding model is `intfloat/multilingual-e5-small`. For E5 models the embedding layer applies the recommended `passage:` and `query:` prefixes. The model is downloaded on first use and then runs locally.
+The default embedding model is `intfloat/multilingual-e5-small`. For E5 models the embedding layer applies the recommended `passage:` and `query:` prefixes. Other sentence-transformers models are embedded without E5 prefixes. Models are downloaded on first use and then run locally.
 
 ## Quick start
 
@@ -37,7 +37,7 @@ python -m pip install --upgrade pip
 pip install -e .
 ```
 
-If PowerShell activation is blocked by execution policy, the virtual environment can be used explicitly without activation:
+If PowerShell activation is blocked by execution policy, use the virtual environment explicitly:
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -e .
@@ -97,7 +97,7 @@ family-kb search "jak připojit hadici" --category 02_ZAHRADA
 
 ## Retrieval benchmark (V1.1a)
 
-`benchmarks/retrieval_cases.yaml` contains a small set of real retrieval cases with one or more acceptable target chunks. The starter set intentionally includes paraphrases such as `trubka + spojka` versus source text using `hadice + fitinky`.
+`benchmarks/retrieval_cases.yaml` contains the original 12-case retrieval baseline. It intentionally includes paraphrases such as `trubka + spojka` versus source text using `hadice + fitinky`.
 
 Run the benchmark against the currently indexed Qdrant collection:
 
@@ -111,49 +111,28 @@ On Windows without virtual-environment activation:
 .\.venv\Scripts\family-kb.exe benchmark
 ```
 
-The command searches TOP 20 by default, prints per-case rank/score and aggregate metrics, and writes a UTF-8 report to:
+The command searches TOP 20 by default, prints per-case rank/score and aggregate metrics, and writes a UTF-8 report to `benchmark_results.txt`.
 
-```text
-benchmark_results.txt
-```
-
-Useful options:
-
-```powershell
-family-kb benchmark --top-k 30
-family-kb benchmark --cases benchmarks/retrieval_cases.yaml --output benchmark_e5_small.txt
-```
-
-Metrics are deliberately simple:
-
-- `Hit@1`, `Hit@3`, `Hit@5` – fraction of cases where at least one acceptable target appears in TOP K,
-- `MRR` – mean reciprocal rank of the first acceptable target,
-- `Misses@N` – cases with no acceptable target within the configured search depth.
-
-The benchmark loads the embedding model once for the whole run. This makes repeated retrieval tests faster and gives a reproducible baseline for later model/chunking comparisons.
+Metrics include Hit@K, MRR, and misses at the configured search depth.
 
 ## Embedding model comparison (V1.1b)
 
 V1.1b compares embedding models while holding the knowledge base, chunking, benchmark cases, Qdrant search settings, and retrieval logic constant.
 
-Run the default comparison:
-
-```powershell
-family-kb compare-models
-```
-
-On Windows without virtual-environment activation:
+Run:
 
 ```powershell
 .\.venv\Scripts\family-kb.exe compare-models
 ```
 
-The default models are:
+The default V1.1b models remain:
 
 - `intfloat/multilingual-e5-small`
 - `intfloat/multilingual-e5-base`
 
-The command collects the Markdown chunks once, then creates a separate Qdrant collection for each model, re-embeds the same chunks, runs the same retrieval benchmark, and writes UTF-8 reports under:
+The command creates separate `*_cmp_*` Qdrant collections and does **not** modify the configured baseline collection.
+
+Reports are written under:
 
 ```text
 model_comparison_results/
@@ -162,33 +141,77 @@ model_comparison_results/
 └── comparison.txt
 ```
 
-For a configured baseline collection named `family_kb`, the experiment collections are:
+Custom models can be supplied by repeating `--model`.
+
+## Deep retrieval diagnosis (V1.1c)
+
+V1.1c is a diagnostic experiment, not a production search change.
+
+It answers two questions:
+
+1. Where does the correct chunk really rank when a TOP-20 benchmark misses it?
+2. Is the failure specific to the E5 model family, or does a different multilingual sentence-embedding family behave differently?
+
+Run:
+
+```powershell
+.\.venv\Scripts\family-kb.exe diagnose-retrieval
+```
+
+V1.1c defaults to:
+
+- search depth `TOP 100`,
+- `intfloat/multilingual-e5-small`,
+- `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`,
+- benchmark file `benchmarks/retrieval_cases_v11c.yaml`.
+
+The diagnostic model is intentionally from a different family. The normal E5 query/passage prefixes are not applied to it.
+
+The V1.1c benchmark contains the original 12 garden cases plus six cross-domain cases from:
+
+- `01_DUM`,
+- `03_AI_METODIKA`,
+- `04_KNIHARSTVI`.
+
+This keeps the original V1.1b benchmark reproducible while reducing the risk of optimizing the whole search stack only for one garden failure case.
+
+Results are written to:
 
 ```text
-family_kb_cmp_multilingual_e5_small
-family_kb_cmp_multilingual_e5_base
+retrieval_diagnostics/
+├── benchmark_multilingual_e5_small.txt
+├── benchmark_paraphrase_multilingual_minilm_l12_v2.txt
+└── comparison.txt
 ```
 
-The configured baseline collection itself is **not modified or deleted** by `compare-models`.
+For a baseline collection `family_kb`, V1.1c uses separate experiment collections such as:
 
-`comparison.txt` contains Hit@1/3/5, MRR, misses, per-case ranks, and informational indexing/benchmark runtimes for each model. Lower rank and higher Hit@K/MRR are better; runtime is reported only to make the quality/cost trade-off visible.
-
-Custom models can be supplied by repeating `--model`:
-
-```powershell
-family-kb compare-models `
-  --model intfloat/multilingual-e5-small `
-  --model intfloat/multilingual-e5-base
+```text
+family_kb_diag_multilingual_e5_small
+family_kb_diag_paraphrase_multilingual_minilm_l12_v2
 ```
 
-Useful options:
+The configured baseline collection is not changed.
 
-```powershell
-family-kb compare-models --top-k 30
-family-kb compare-models --output-dir my_model_test
+The report includes actual per-case ranks up to TOP 100 and aggregate Hit@1/3/5/10/20/100, MRR, misses, and informational runtimes.
+
+If the `trubka + spojka` target appears at a moderate deep rank, a later reranker experiment becomes reasonable. If it remains very deep or missed across model families, the next step should focus on the retrieval representation rather than simply increasing TOP K.
+
+## Benchmark target matching
+
+Benchmark targets can identify a source by exact relative path:
+
+```yaml
+source_path: "02_ZAHRADA/02_ZAHONY/SOUHRN_ZAHONU.md"
 ```
 
-The first run may download models that are not yet present in the local Hugging Face cache.
+or, for cross-domain cases where only the stable file name matters, by path suffix:
+
+```yaml
+source_endswith: "SOUHRN_ZEBRIKU.md"
+```
+
+Optional `section_contains` and `text_contains` constraints still verify that the returned chunk contains the intended knowledge.
 
 ## Configuration
 
@@ -202,17 +225,17 @@ The first run may download models that are not yet present in the local Hugging 
 - `chunk_overlap` – overlap when a long Markdown section must be split
 - `top_k` – default number of interactive search results
 
-Chunking first follows Markdown headings (`#`, `##`, `###`, ...). Long sections are then split to the configured size with overlap. Each Qdrant point uses a deterministic UUID derived from source path, section path, and chunk index, and stores payload metadata needed for later incremental indexing.
+Chunking first follows Markdown headings (`#`, `##`, `###`, ...). Long sections are then split to the configured size with overlap. Each Qdrant point uses a deterministic UUID derived from source path, section path, and chunk index.
 
 ## Tests
 
-Unit tests do not load or download the embedding model and do not require a running Qdrant:
+Unit tests do not load or download embedding models and do not require a running Qdrant:
 
 ```powershell
 pytest
 ```
 
-They cover Markdown section hierarchy, long-section splitting, fenced-code handling, deterministic chunk IDs, configuration parsing, benchmark case parsing, acceptable-target matching, benchmark metrics, and model-comparison report helpers.
+They cover Markdown chunking, configuration, benchmark matching/metrics, deep diagnostic metrics, and model-comparison naming/report helpers.
 
 ## Intentionally out of scope
 

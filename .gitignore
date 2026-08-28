@@ -20,6 +20,7 @@ huggingface/
 benchmark_results*.txt
 retrieval_test_results.txt
 model_comparison_results/
+retrieval_diagnostics/
 
 # Qdrant local data (if a bind mount is used later)
 qdrant_storage/

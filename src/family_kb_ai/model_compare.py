@@ -19,6 +19,11 @@ DEFAULT_MODELS = (
     "intfloat/multilingual-e5-base",
 )
 
+DIAGNOSTIC_MODELS = (
+    "intfloat/multilingual-e5-small",
+    "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+)
+
 
 @dataclass(frozen=True)
 class ModelRunResult:
@@ -39,6 +44,7 @@ class ModelComparisonReport:
     top_k: int
     runs: tuple[ModelRunResult, ...]
     generated_at: str
+    collection_tag: str = "cmp"
 
     def render(self) -> str:
         lines = [
@@ -46,6 +52,7 @@ class ModelComparisonReport:
             f"Generated: {self.generated_at}",
             f"Cases: {self.cases_path}",
             f"Search depth: TOP {self.top_k}",
+            f"Experiment tag: {self.collection_tag}",
             "",
             "MODEL SUMMARY",
             "=============",
@@ -57,10 +64,18 @@ class ModelComparisonReport:
                 [
                     f"{index}. {run.model}",
                     f"   collection: {run.collection}",
-                    f"   indexed: {run.document_count} documents / {run.chunk_count} chunks",
-                    f"   Hit@1: {report.hit_rate(1) * 100:.1f}%",
-                    f"   Hit@3: {report.hit_rate(3) * 100:.1f}%",
-                    f"   Hit@5: {report.hit_rate(5) * 100:.1f}%",
+                    (
+                        f"   indexed: {run.document_count} documents / "
+                        f"{run.chunk_count} chunks"
+                    ),
+                ]
+            )
+            for depth in report.metric_depths():
+                lines.append(
+                    f"   Hit@{depth}: {report.hit_rate(depth) * 100:.1f}%"
+                )
+            lines.extend(
+                [
                     f"   MRR: {report.mrr:.3f}",
                     f"   Misses@{self.top_k}: {report.miss_count}",
                     f"   index time: {run.index_seconds:.1f} s",
@@ -108,8 +123,16 @@ def model_slug(model_name: str) -> str:
     return slug
 
 
-def experiment_collection_name(base_collection: str, model_name: str) -> str:
-    return f"{base_collection}_cmp_{model_slug(model_name)}"
+def experiment_collection_name(
+    base_collection: str,
+    model_name: str,
+    *,
+    tag: str = "cmp",
+) -> str:
+    safe_tag = re.sub(r"[^a-z0-9]+", "_", tag.casefold()).strip("_")
+    if not safe_tag:
+        raise ValueError("Experiment collection tag must not be empty")
+    return f"{base_collection}_{safe_tag}_{model_slug(model_name)}"
 
 
 def run_model_comparison(
@@ -119,12 +142,15 @@ def run_model_comparison(
     cases_path: str | Path,
     top_k: int,
     output_dir: str | Path,
+    collection_tag: str = "cmp",
 ) -> ModelComparisonReport:
-    normalized_models = tuple(dict.fromkeys(model.strip() for model in models if model.strip()))
+    normalized_models = tuple(
+        dict.fromkeys(model.strip() for model in models if model.strip())
+    )
     if len(normalized_models) < 2:
-        raise ValueError("compare-models requires at least two distinct models")
+        raise ValueError("model comparison requires at least two distinct models")
     if top_k <= 0:
-        raise ValueError("compare-models top_k must be greater than 0")
+        raise ValueError("model comparison top_k must be greater than 0")
 
     from .benchmark import run_benchmark
     from .embeddings import LocalEmbedder
@@ -141,7 +167,11 @@ def run_model_comparison(
     runs: list[ModelRunResult] = []
     for model in normalized_models:
         slug = model_slug(model)
-        collection = experiment_collection_name(settings.qdrant_collection, model)
+        collection = experiment_collection_name(
+            settings.qdrant_collection,
+            model,
+            tag=collection_tag,
+        )
         experiment_settings = replace(
             settings,
             embedding_model=model,
@@ -188,6 +218,7 @@ def run_model_comparison(
         top_k=top_k,
         runs=tuple(runs),
         generated_at=datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds"),
+        collection_tag=collection_tag,
     )
     (output_root / "comparison.txt").write_text(report.render(), encoding="utf-8")
     return report
