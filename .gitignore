@@ -1,0 +1,26 @@
+# Local configuration and knowledge base
+config.yaml
+RODINNE_KNOWHOW/
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+
+# Local model/cache data
+.cache/
+huggingface/
+
+# Qdrant local data (if a bind mount is used later)
+qdrant_storage/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
