@@ -49,7 +49,7 @@ pip install -e ".[dev]"
 docker compose up -d
 ```
 
-Qdrant REST API is exposed at `http://localhost:6333`. The standard image also provides its local dashboard at `http://localhost:6333/dashboard`.
+Qdrant REST API is exposed only on the local machine at `http://localhost:6333`. The standard image also provides its local dashboard at `http://localhost:6333/dashboard`.
 
 ### 3. Configure the external knowledge base
 
