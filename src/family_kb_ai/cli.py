@@ -23,10 +23,32 @@ def build_parser() -> argparse.ArgumentParser:
     search_parser.add_argument("--top-k", type=int, default=None, help="Number of results")
     search_parser.add_argument("--category", default=None, help="Optional category payload filter")
 
+    benchmark_parser = subparsers.add_parser(
+        "benchmark",
+        help="Run reproducible retrieval quality cases",
+    )
+    benchmark_parser.add_argument(
+        "--cases",
+        default="benchmarks/retrieval_cases.yaml",
+        help="YAML file with retrieval benchmark cases",
+    )
+    benchmark_parser.add_argument(
+        "--top-k",
+        type=int,
+        default=20,
+        help="Search depth used to find an acceptable result",
+    )
+    benchmark_parser.add_argument(
+        "--output",
+        default="benchmark_results.txt",
+        help="UTF-8 text report path",
+    )
+
     return parser
 
 
 def main() -> None:
+    _configure_utf8_streams()
     parser = build_parser()
     args = parser.parse_args()
 
@@ -37,6 +59,19 @@ def main() -> None:
 
             documents, chunks = ingest(settings, recreate=args.recreate)
             print(f"Indexed {documents} Markdown documents into {chunks} chunks.")
+            return
+
+        if args.command == "benchmark":
+            from .benchmark import run_benchmark
+
+            report = run_benchmark(
+                settings,
+                cases_path=args.cases,
+                top_k=args.top_k,
+                output_path=args.output,
+            )
+            print(report.render(), end="")
+            print(f"UTF-8 report saved to: {args.output}")
             return
 
         from .search import search
@@ -64,6 +99,16 @@ def main() -> None:
     except KeyboardInterrupt:
         print("Interrupted.", file=sys.stderr)
         raise SystemExit(130) from None
+
+
+def _configure_utf8_streams() -> None:
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            try:
+                reconfigure(encoding="utf-8", errors="replace")
+            except (AttributeError, OSError):
+                pass
 
 
 def _indent(text: str, prefix: str) -> str:

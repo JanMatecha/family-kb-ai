@@ -1,3 +1,3 @@
 """Local AI search layer for the family knowledge base."""
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"

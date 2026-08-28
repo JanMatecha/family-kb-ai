@@ -2,7 +2,7 @@
 
 Small local POC for semantic vector search over an external Markdown family knowledge base.
 
-The goal of V1 is deliberately narrow: verify that semantic search can find the right knowledge even when the query uses different words than the source Markdown.
+The goal is deliberately narrow: verify that semantic search can find the right knowledge even when the query uses different words than the source Markdown, then improve retrieval based on measured real-world cases.
 
 ## Architecture
 
@@ -15,12 +15,12 @@ local sentence-transformers embeddings
         ↓
 local Qdrant index
         ↓
-vector search from CLI
+vector search / retrieval benchmark from CLI
 ```
 
 **Markdown is the source of truth. Qdrant is only a rebuildable search index.** The knowledge base itself is not stored in this repository. Qdrant can be deleted and rebuilt from the Markdown files at any time.
 
-V1 uses `intfloat/multilingual-e5-small` by default. For E5 models the embedding layer applies the recommended `passage:` and `query:` prefixes. The model is downloaded on first use and then runs locally.
+The default embedding model is `intfloat/multilingual-e5-small`. For E5 models the embedding layer applies the recommended `passage:` and `query:` prefixes. The model is downloaded on first use and then runs locally.
 
 ## Quick start
 
@@ -37,6 +37,13 @@ python -m pip install --upgrade pip
 pip install -e .
 ```
 
+If PowerShell activation is blocked by execution policy, the virtual environment can be used explicitly without activation:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -e .
+.\.venv\Scripts\family-kb.exe --help
+```
+
 For development/tests:
 
 ```powershell
@@ -49,7 +56,7 @@ pip install -e ".[dev]"
 docker compose up -d
 ```
 
-Qdrant REST API is exposed only on the local machine at `http://localhost:6333`. The standard image also provides its local dashboard at `http://localhost:6333/dashboard`.
+Qdrant REST API is exposed only on the local machine at `http://localhost:6333`. The local dashboard is available at `http://localhost:6333/dashboard`.
 
 ### 3. Configure the external knowledge base
 
@@ -71,7 +78,7 @@ kb_path: "C:/Users/.../RODINNE_KNOWHOW"
 family-kb ingest --recreate
 ```
 
-V1 intentionally supports only an explicit full rebuild. It recursively indexes all `*.md` files under `kb_path`.
+The current version intentionally supports an explicit full rebuild. It recursively indexes all `*.md` files under `kb_path`.
 
 ### 5. Search
 
@@ -81,21 +88,53 @@ family-kb search "jak jsme řešili hadici?"
 
 Default output is TOP 5 and includes score, source path, Markdown section hierarchy, and chunk text.
 
-Override result count:
+Override result count or add a category filter:
 
 ```powershell
 family-kb search "jak připojit hadici" --top-k 10
-```
-
-Optional simple category filter:
-
-```powershell
 family-kb search "jak připojit hadici" --category 02_ZAHRADA
 ```
 
+## Retrieval benchmark (V1.1a)
+
+`benchmarks/retrieval_cases.yaml` contains a small set of real retrieval cases with one or more acceptable target chunks. The starter set intentionally includes paraphrases such as `trubka + spojka` versus source text using `hadice + fitinky`.
+
+Run the benchmark against the currently indexed Qdrant collection:
+
+```powershell
+family-kb benchmark
+```
+
+On Windows without virtual-environment activation:
+
+```powershell
+.\.venv\Scripts\family-kb.exe benchmark
+```
+
+The command searches TOP 20 by default, prints per-case rank/score and aggregate metrics, and writes a UTF-8 report to:
+
+```text
+benchmark_results.txt
+```
+
+Useful options:
+
+```powershell
+family-kb benchmark --top-k 30
+family-kb benchmark --cases benchmarks/retrieval_cases.yaml --output benchmark_e5_small.txt
+```
+
+Metrics are deliberately simple:
+
+- `Hit@1`, `Hit@3`, `Hit@5` – fraction of cases where at least one acceptable target appears in TOP K,
+- `MRR` – mean reciprocal rank of the first acceptable target,
+- `Misses@N` – cases with no acceptable target within the configured search depth.
+
+The benchmark loads the embedding model once for the whole run. This makes repeated retrieval tests faster and gives a reproducible baseline for later model/chunking comparisons.
+
 ## Configuration
 
-`config.example.yaml` contains the V1 settings:
+`config.example.yaml` contains:
 
 - `kb_path` – path to the external `RODINNE_KNOWHOW`
 - `qdrant_url` – local Qdrant URL
@@ -103,20 +142,20 @@ family-kb search "jak připojit hadici" --category 02_ZAHRADA
 - `embedding_model` – local sentence-transformers model
 - `chunk_size` – maximum approximate chunk length in characters
 - `chunk_overlap` – overlap when a long Markdown section must be split
-- `top_k` – default number of search results
+- `top_k` – default number of interactive search results
 
 Chunking first follows Markdown headings (`#`, `##`, `###`, ...). Long sections are then split to the configured size with overlap. Each Qdrant point uses a deterministic UUID derived from source path, section path, and chunk index, and stores payload metadata needed for later incremental indexing.
 
 ## Tests
 
-Unit tests do not load or download the embedding model and do not require Qdrant:
+Unit tests do not load or download the embedding model and do not require a running Qdrant:
 
 ```powershell
 pytest
 ```
 
-They cover Markdown section hierarchy, long-section splitting, fenced-code handling, deterministic chunk IDs, and configuration parsing.
+They cover Markdown section hierarchy, long-section splitting, fenced-code handling, deterministic chunk IDs, configuration parsing, benchmark case parsing, acceptable-target matching, and benchmark metrics.
 
-## Intentionally out of scope for V1
+## Intentionally out of scope
 
 No LLM, chatbot, RAG generation, OpenAI API, web UI, REST API, file watcher, hybrid search, reranker, OCR/PDF ingestion, multimodality, permissions, or cloud deployment.

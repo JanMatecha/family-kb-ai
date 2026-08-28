@@ -23,13 +23,29 @@ def search(
     category: str | None = None,
 ) -> list[SearchResult]:
     limit = top_k if top_k is not None else settings.top_k
-    if limit <= 0:
-        raise ValueError("top_k must be greater than 0")
-
     embedder = LocalEmbedder(settings.embedding_model)
     store = QdrantStore(settings.qdrant_url, settings.qdrant_collection)
-    points = store.search(embedder.embed_query(query), limit=limit, category=category)
+    return search_with_components(
+        query,
+        embedder=embedder,
+        store=store,
+        top_k=limit,
+        category=category,
+    )
 
+
+def search_with_components(
+    query: str,
+    *,
+    embedder: LocalEmbedder,
+    store: QdrantStore,
+    top_k: int,
+    category: str | None = None,
+) -> list[SearchResult]:
+    if top_k <= 0:
+        raise ValueError("top_k must be greater than 0")
+
+    points = store.search(embedder.embed_query(query), limit=top_k, category=category)
     results: list[SearchResult] = []
     for point in points:
         payload = point.payload or {}
