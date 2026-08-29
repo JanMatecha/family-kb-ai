@@ -13,6 +13,7 @@ class SearchResult:
     source_path: str
     section_path: tuple[str, ...]
     text: str
+    chunk_id: str = ""
 
 
 def search(
@@ -55,6 +56,7 @@ def search_with_components(
                 source_path=str(payload.get("source_path", "")),
                 section_path=tuple(payload.get("section_path", []) or []),
                 text=str(payload.get("text", "")),
+                chunk_id=str(point.id),
             )
         )
     return results

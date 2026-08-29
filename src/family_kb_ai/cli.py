@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import sqlite3
 import sys
 
-from .config import load_settings
+from . import __version__
+from .config import Settings, load_settings
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -46,6 +48,41 @@ def build_parser() -> argparse.ArgumentParser:
         "--category",
         default=None,
         help="Optional category payload filter",
+    )
+    search_parser.add_argument(
+        "--feedback-db",
+        default="usage_feedback.db",
+        help="SQLite database for real search usage and feedback",
+    )
+    search_parser.add_argument(
+        "--no-feedback",
+        action="store_true",
+        help="Log the search but skip the interactive rating prompt",
+    )
+    search_parser.add_argument(
+        "--no-log",
+        action="store_true",
+        help="Do not store this search in the usage database",
+    )
+
+    export_parser = subparsers.add_parser(
+        "export-feedback",
+        help="Export real search usage from SQLite to JSONL",
+    )
+    export_parser.add_argument(
+        "--db",
+        default="usage_feedback.db",
+        help="SQLite usage database",
+    )
+    export_parser.add_argument(
+        "--output",
+        default="evaluation/usage_feedback.jsonl",
+        help="UTF-8 JSONL export path",
+    )
+    export_parser.add_argument(
+        "--include-text",
+        action="store_true",
+        help="Include full retrieved chunk text in the export",
     )
 
     benchmark_parser = subparsers.add_parser(
@@ -135,6 +172,17 @@ def main() -> None:
     args = parser.parse_args()
 
     try:
+        if args.command == "export-feedback":
+            from .usage_feedback import UsageFeedbackStore
+
+            count = UsageFeedbackStore(args.db).export_jsonl(
+                args.output,
+                include_text=args.include_text,
+            )
+            print(f"Exported {count} searches to: {args.output}")
+            print("Review the export before committing it; it contains real user queries.")
+            return
+
         settings = load_settings(args.config)
         if args.command == "ingest":
             from .ingest import ingest
@@ -194,23 +242,116 @@ def main() -> None:
             top_k=args.top_k,
             category=args.category,
         )
+
         if not results:
             print("No results.")
-            return
+        else:
+            for rank, result in enumerate(results, start=1):
+                section = " > ".join(result.section_path) or "(document root)"
+                print(f"{rank}. score: {result.score:.3f}")
+                print(f"   source: {result.source_path}")
+                print(f"   section: {section}")
+                print()
+                print(_indent(result.text, "   "))
+                print()
 
-        for rank, result in enumerate(results, start=1):
-            section = " > ".join(result.section_path) or "(document root)"
-            print(f"{rank}. score: {result.score:.3f}")
-            print(f"   source: {result.source_path}")
-            print(f"   section: {section}")
-            print()
-            print(_indent(result.text, "   "))
-            print()
+        _capture_usage(settings, args, results)
     except (FileNotFoundError, ValueError, RuntimeError) as exc:
         parser.error(str(exc))
     except KeyboardInterrupt:
         print("Interrupted.", file=sys.stderr)
         raise SystemExit(130) from None
+
+
+def _capture_usage(
+    settings: Settings,
+    args: argparse.Namespace,
+    results: list[object],
+) -> None:
+    if args.no_log:
+        return
+
+    from .usage_feedback import UsageFeedbackStore
+
+    top_k = args.top_k if args.top_k is not None else settings.top_k
+    try:
+        store = UsageFeedbackStore(args.feedback_db)
+        search_id = store.record_search(
+            query=args.query,
+            embedding_model=settings.embedding_model,
+            qdrant_collection=settings.qdrant_collection,
+            top_k=top_k,
+            category=args.category,
+            app_version=__version__,
+            results=results,
+        )
+    except (OSError, sqlite3.Error, ValueError) as exc:
+        print(f"Warning: could not log search usage: {exc}", file=sys.stderr)
+        return
+
+    print(f"Search logged as #{search_id} in {args.feedback_db}.")
+
+    if args.no_feedback or not sys.stdin.isatty():
+        return
+
+    rating = _prompt_rating()
+    if rating is None:
+        return
+
+    selected_rank = None
+    if results and rating in {1, 2}:
+        selected_rank = _prompt_selected_rank(len(results))
+
+    try:
+        store.record_feedback(
+            search_id,
+            rating=rating,
+            selected_rank=selected_rank,
+        )
+    except (OSError, sqlite3.Error, ValueError) as exc:
+        print(f"Warning: could not save feedback: {exc}", file=sys.stderr)
+        return
+
+    print("Feedback saved.")
+
+
+def _prompt_rating() -> int | None:
+    while True:
+        try:
+            value = input(
+                "Našel jsi, co jsi potřeboval? "
+                "[2=ano, 1=částečně, 0=ne, Enter=přeskočit]: "
+            ).strip()
+        except EOFError:
+            return None
+
+        if value == "":
+            return None
+        if value in {"0", "1", "2"}:
+            return int(value)
+        print("Zadej 2, 1, 0 nebo Enter.")
+
+
+def _prompt_selected_rank(result_count: int) -> int | None:
+    while True:
+        try:
+            value = input(
+                f"Který výsledek byl nejlepší? "
+                f"[1-{result_count}, Enter=přeskočit]: "
+            ).strip()
+        except EOFError:
+            return None
+
+        if value == "":
+            return None
+        try:
+            rank = int(value)
+        except ValueError:
+            rank = 0
+
+        if 1 <= rank <= result_count:
+            return rank
+        print(f"Zadej číslo 1-{result_count} nebo Enter.")
 
 
 def _configure_utf8_streams() -> None:

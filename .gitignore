@@ -16,6 +16,12 @@ build/
 .cache/
 huggingface/
 
+# Local pilot usage database
+usage_feedback.db
+usage_feedback.db-shm
+usage_feedback.db-wal
+usage_feedback.db-journal
+
 # Local benchmark and diagnostic reports
 benchmark_results*.txt
 retrieval_test_results.txt
