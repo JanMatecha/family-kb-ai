@@ -68,6 +68,29 @@ function Add-NativeSection {
     }
 }
 
+function Invoke-PythonSnippet {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Python,
+        [Parameter(Mandatory = $true)]
+        [string]$Code
+    )
+
+    $tempFile = Join-Path `
+        ([System.IO.Path]::GetTempPath()) `
+        ("family-kb-diagnostic-{0}.py" -f [guid]::NewGuid().ToString("N"))
+
+    try {
+        $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+        [System.IO.File]::WriteAllText($tempFile, $Code, $utf8NoBom)
+        $raw = & $Python $tempFile 2>&1
+        return Convert-ToCleanText $raw
+    }
+    finally {
+        Remove-Item $tempFile -Force -ErrorAction SilentlyContinue
+    }
+}
+
 Set-Content `
     -Path $OutputPath `
     -Value "=== SYSTEM CHECK $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') ===" `
@@ -146,8 +169,7 @@ print("family-kb:", family_kb_ai.__version__)
 print("torch:", torch.__version__)
 print("cuda:", torch.cuda.is_available())
 '@
-        $raw = & $python -c $pythonInfo 2>&1
-        Add-Log (Convert-ToCleanText $raw)
+        Add-Log (Invoke-PythonSnippet -Python $python -Code $pythonInfo)
     }
     catch {
         Add-Log "ERROR: $($_.Exception.Message)"
@@ -170,8 +192,7 @@ print("qdrant_url:", s.qdrant_url)
 print("qdrant_collection:", s.qdrant_collection)
 print("embedding_model:", s.embedding_model)
 '@
-        $raw = & $python -c $configInfo 2>&1
-        Add-Log (Convert-ToCleanText $raw)
+        Add-Log (Invoke-PythonSnippet -Python $python -Code $configInfo)
     }
     catch {
         Add-Log "ERROR: $($_.Exception.Message)"
