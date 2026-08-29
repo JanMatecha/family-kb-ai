@@ -16,9 +16,10 @@ build/
 .cache/
 huggingface/
 
-# Local benchmark reports
+# Local benchmark and diagnostic reports
 benchmark_results*.txt
 retrieval_test_results.txt
+system_check*.txt
 model_comparison_results/
 retrieval_diagnostics/
 
