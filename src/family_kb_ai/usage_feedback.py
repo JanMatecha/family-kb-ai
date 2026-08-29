@@ -65,10 +65,35 @@ class UsageFeedbackStore:
                     FOREIGN KEY (search_id) REFERENCES searches(id) ON DELETE CASCADE
                 );
 
+                CREATE TABLE IF NOT EXISTS feedback_results (
+                    search_id INTEGER NOT NULL,
+                    rank INTEGER NOT NULL,
+                    PRIMARY KEY (search_id, rank),
+                    FOREIGN KEY (search_id, rank)
+                        REFERENCES results(search_id, rank)
+                        ON DELETE CASCADE
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_searches_created_at
                 ON searches(created_at);
                 """
             )
+            self._migrate_selected_rank(connection)
+
+    @staticmethod
+    def _migrate_selected_rank(connection: sqlite3.Connection) -> None:
+        """Preserve V1.2a single-rank feedback as one useful result."""
+        connection.execute(
+            """
+            INSERT OR IGNORE INTO feedback_results (search_id, rank)
+            SELECT feedback.search_id, feedback.selected_rank
+            FROM feedback
+            JOIN results
+              ON results.search_id = feedback.search_id
+             AND results.rank = feedback.selected_rank
+            WHERE feedback.selected_rank IS NOT NULL
+            """
+        )
 
     def record_search(
         self,
@@ -145,13 +170,19 @@ class UsageFeedbackStore:
         search_id: int,
         *,
         rating: int,
-        selected_rank: int | None = None,
+        useful_ranks: Sequence[int] | None = None,
         note: str | None = None,
     ) -> None:
         if rating not in {0, 1, 2}:
             raise ValueError("rating must be 0, 1, or 2")
-        if selected_rank is not None and selected_rank <= 0:
-            raise ValueError("selected_rank must be greater than 0")
+
+        normalized_ranks = (
+            tuple(sorted(set(useful_ranks)))
+            if useful_ranks is not None
+            else None
+        )
+        if normalized_ranks is not None and any(rank <= 0 for rank in normalized_ranks):
+            raise ValueError("useful ranks must be greater than 0")
 
         with self._connect() as connection:
             search_row = connection.execute(
@@ -161,18 +192,25 @@ class UsageFeedbackStore:
             if search_row is None:
                 raise ValueError(f"Unknown search_id: {search_id}")
 
-            if selected_rank is not None:
-                result_row = connection.execute(
-                    """
-                    SELECT 1
+            if normalized_ranks:
+                placeholders = ",".join("?" for _ in normalized_ranks)
+                result_rows = connection.execute(
+                    f"""
+                    SELECT rank
                     FROM results
-                    WHERE search_id = ? AND rank = ?
+                    WHERE search_id = ?
+                      AND rank IN ({placeholders})
                     """,
-                    (search_id, selected_rank),
-                ).fetchone()
-                if result_row is None:
+                    (search_id, *normalized_ranks),
+                ).fetchall()
+                existing_ranks = {int(row["rank"]) for row in result_rows}
+                missing = [
+                    rank for rank in normalized_ranks if rank not in existing_ranks
+                ]
+                if missing:
+                    missing_text = ", ".join(str(rank) for rank in missing)
                     raise ValueError(
-                        f"Search {search_id} has no result at rank {selected_rank}"
+                        f"Search {search_id} has no result at rank(s): {missing_text}"
                     )
 
             connection.execute(
@@ -184,15 +222,28 @@ class UsageFeedbackStore:
                     note,
                     created_at
                 )
-                VALUES (?, ?, ?, ?, ?)
+                VALUES (?, ?, NULL, ?, ?)
                 ON CONFLICT(search_id) DO UPDATE SET
                     rating = excluded.rating,
-                    selected_rank = excluded.selected_rank,
+                    selected_rank = NULL,
                     note = excluded.note,
                     created_at = excluded.created_at
                 """,
-                (search_id, rating, selected_rank, note, _now()),
+                (search_id, rating, note, _now()),
             )
+
+            if normalized_ranks is not None:
+                connection.execute(
+                    "DELETE FROM feedback_results WHERE search_id = ?",
+                    (search_id,),
+                )
+                connection.executemany(
+                    """
+                    INSERT INTO feedback_results (search_id, rank)
+                    VALUES (?, ?)
+                    """,
+                    [(search_id, rank) for rank in normalized_ranks],
+                )
 
     def export_jsonl(
         self,
@@ -240,12 +291,21 @@ class UsageFeedbackStore:
                     ).fetchall()
                     feedback_row = connection.execute(
                         """
-                        SELECT rating, selected_rank, note, created_at
+                        SELECT rating, note, created_at
                         FROM feedback
                         WHERE search_id = ?
                         """,
                         (search_id,),
                     ).fetchone()
+                    useful_rows = connection.execute(
+                        """
+                        SELECT rank
+                        FROM feedback_results
+                        WHERE search_id = ?
+                        ORDER BY rank
+                        """,
+                        (search_id,),
+                    ).fetchall()
 
                     payload = {
                         "search_id": search_id,
@@ -263,7 +323,9 @@ class UsageFeedbackStore:
                         "feedback": (
                             {
                                 "rating": int(feedback_row["rating"]),
-                                "selected_rank": feedback_row["selected_rank"],
+                                "useful_ranks": [
+                                    int(row["rank"]) for row in useful_rows
+                                ],
                                 "note": feedback_row["note"],
                                 "timestamp": feedback_row["created_at"],
                             }

@@ -65,6 +65,38 @@ def build_parser() -> argparse.ArgumentParser:
         help="Do not store this search in the usage database",
     )
 
+    feedback_parser = subparsers.add_parser(
+        "feedback",
+        help="Add or correct feedback for an already logged search",
+    )
+    feedback_parser.add_argument(
+        "search_id",
+        type=int,
+        help="Logged search ID",
+    )
+    feedback_parser.add_argument(
+        "--rating",
+        type=int,
+        choices=(0, 1, 2),
+        required=True,
+        help="Overall success: 2=found, 1=partly useful, 0=not found",
+    )
+    feedback_parser.add_argument(
+        "--useful",
+        default=None,
+        help="Comma-separated useful result ranks, for example 1,3,4",
+    )
+    feedback_parser.add_argument(
+        "--note",
+        default=None,
+        help="Optional free-text note",
+    )
+    feedback_parser.add_argument(
+        "--db",
+        default="usage_feedback.db",
+        help="SQLite usage database",
+    )
+
     export_parser = subparsers.add_parser(
         "export-feedback",
         help="Export real search usage from SQLite to JSONL",
@@ -172,6 +204,23 @@ def main() -> None:
     args = parser.parse_args()
 
     try:
+        if args.command == "feedback":
+            from .usage_feedback import UsageFeedbackStore
+
+            useful_ranks = (
+                _parse_useful_ranks(args.useful)
+                if args.useful is not None
+                else None
+            )
+            UsageFeedbackStore(args.db).record_feedback(
+                args.search_id,
+                rating=args.rating,
+                useful_ranks=useful_ranks,
+                note=args.note,
+            )
+            print(f"Feedback for search #{args.search_id} saved.")
+            return
+
         if args.command == "export-feedback":
             from .usage_feedback import UsageFeedbackStore
 
@@ -256,7 +305,7 @@ def main() -> None:
                 print()
 
         _capture_usage(settings, args, results)
-    except (FileNotFoundError, ValueError, RuntimeError) as exc:
+    except (FileNotFoundError, ValueError, RuntimeError, sqlite3.Error) as exc:
         parser.error(str(exc))
     except KeyboardInterrupt:
         print("Interrupted.", file=sys.stderr)
@@ -298,15 +347,13 @@ def _capture_usage(
     if rating is None:
         return
 
-    selected_rank = None
-    if results and rating in {1, 2}:
-        selected_rank = _prompt_selected_rank(len(results))
+    useful_ranks = _prompt_useful_ranks(len(results)) if results else None
 
     try:
         store.record_feedback(
             search_id,
             rating=rating,
-            selected_rank=selected_rank,
+            useful_ranks=useful_ranks,
         )
     except (OSError, sqlite3.Error, ValueError) as exc:
         print(f"Warning: could not save feedback: {exc}", file=sys.stderr)
@@ -332,26 +379,51 @@ def _prompt_rating() -> int | None:
         print("Zadej 2, 1, 0 nebo Enter.")
 
 
-def _prompt_selected_rank(result_count: int) -> int | None:
+def _prompt_useful_ranks(result_count: int) -> tuple[int, ...] | None:
     while True:
         try:
             value = input(
-                f"Který výsledek byl nejlepší? "
-                f"[1-{result_count}, Enter=přeskočit]: "
+                "Které výsledky byly užitečné? "
+                f"[např. 1,3,4; rozsah 1-{result_count}; Enter=přeskočit]: "
             ).strip()
         except EOFError:
             return None
 
         if value == "":
             return None
-        try:
-            rank = int(value)
-        except ValueError:
-            rank = 0
 
-        if 1 <= rank <= result_count:
-            return rank
-        print(f"Zadej číslo 1-{result_count} nebo Enter.")
+        try:
+            return _parse_useful_ranks(value, max_rank=result_count)
+        except ValueError:
+            print(
+                f"Zadej čísla 1-{result_count} oddělená čárkou "
+                "nebo Enter."
+            )
+
+
+def _parse_useful_ranks(
+    value: str,
+    *,
+    max_rank: int | None = None,
+) -> tuple[int, ...]:
+    raw_parts = [part.strip() for part in value.split(",")]
+    if not raw_parts or any(part == "" for part in raw_parts):
+        raise ValueError("useful ranks must be comma-separated positive integers")
+
+    ranks: set[int] = set()
+    for part in raw_parts:
+        try:
+            rank = int(part)
+        except ValueError as exc:
+            raise ValueError(
+                "useful ranks must be comma-separated positive integers"
+            ) from exc
+
+        if rank <= 0 or (max_rank is not None and rank > max_rank):
+            raise ValueError("useful rank is outside the available result range")
+        ranks.add(rank)
+
+    return tuple(sorted(ranks))
 
 
 def _configure_utf8_streams() -> None:
