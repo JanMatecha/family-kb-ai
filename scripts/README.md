@@ -2,6 +2,18 @@
 
 These helper scripts are intended for the local Windows notebook used by the POC.
 
+Python dependencies are managed by **uv**. The project can still use a local `.venv`, but it is created and synchronized by `uv`; activation and direct `pip install` commands are not part of the normal workflow.
+
+## First setup / after dependency changes
+
+From the repository root:
+
+```powershell
+uv sync
+```
+
+`uv sync` creates or updates the local environment from `pyproject.toml` and `uv.lock` when the lock file is present. If `uv.lock` does not exist yet, uv creates it.
+
 ## After a Windows restart
 
 From the repository root, run:
@@ -19,9 +31,17 @@ The startup script:
 3. waits for the Docker engine,
 4. runs `docker compose up -d`,
 5. waits until the Qdrant REST API answers,
-6. verifies that `.venv\Scripts\family-kb.exe` is available.
+6. verifies `uv`,
+7. verifies the already-synchronized Family KB CLI with `uv run --no-sync family-kb --help`.
 
-It does **not** run `git pull`, reinstall Python packages, reindex the knowledge base, or start a benchmark automatically.
+It does **not** run `git pull`, `uv sync`, reindex the knowledge base, or start a benchmark automatically.
+
+After pulling dependency changes, run:
+
+```powershell
+git pull
+uv sync
+```
 
 Optional diagnostics after startup:
 
@@ -50,8 +70,9 @@ The report includes:
 - Git working-tree status and current HEAD,
 - Docker Compose / Qdrant container status,
 - Qdrant collections,
-- `family-kb --help`,
-- virtual-environment Python, package and Torch versions,
+- uv version,
+- `family-kb --help` through uv,
+- uv-managed Python, package and Torch versions,
 - CUDA availability,
 - configured KB path and whether it is accessible,
 - configured Qdrant collection and embedding model.
