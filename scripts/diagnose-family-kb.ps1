@@ -133,12 +133,15 @@ catch {
     Add-Log "Qdrant is not available: $($_.Exception.Message)"
 }
 
-$familyKb = Join-Path $repoRoot ".venv\Scripts\family-kb.exe"
+Add-NativeSection -Title "UV VERSION" -Command {
+    & uv --version
+}
+
 Add-Log ""
 Add-Log "=== FAMILY KB CLI ==="
-if (Test-Path $familyKb) {
+if (Get-Command uv -ErrorAction SilentlyContinue) {
     try {
-        $raw = & $familyKb --help 2>&1
+        $raw = & uv run --no-sync family-kb --help 2>&1
         Add-Log (Convert-ToCleanText $raw)
     }
     catch {
@@ -146,12 +149,12 @@ if (Test-Path $familyKb) {
     }
 }
 else {
-    Add-Log "Missing: $familyKb"
+    Add-Log "uv is not available on PATH."
 }
 
 $python = Join-Path $repoRoot ".venv\Scripts\python.exe"
 Add-Log ""
-Add-Log "=== PYTHON VENV ==="
+Add-Log "=== UV-MANAGED PYTHON ENVIRONMENT ==="
 if (Test-Path $python) {
     try {
         $raw = & $python --version 2>&1
@@ -176,7 +179,8 @@ print("cuda:", torch.cuda.is_available())
     }
 }
 else {
-    Add-Log "Missing: $python"
+    Add-Log "Missing uv-managed environment: $python"
+    Add-Log "Run: uv sync"
 }
 
 Add-Log ""
@@ -199,7 +203,7 @@ print("embedding_model:", s.embedding_model)
     }
 }
 else {
-    Add-Log "config.yaml or virtual-environment Python is missing."
+    Add-Log "config.yaml or uv-managed Python environment is missing."
 }
 
 Add-Log ""
