@@ -48,13 +48,13 @@ Use `--no-feedback` to keep logging but skip the interactive questions. Use `--n
 Feedback for an existing search can be changed without repeating the search. For example:
 
 ```powershell
-.\.venv\Scripts\family-kb.exe feedback 1 --rating 2 --useful 1,3,4
+uv run family-kb feedback 1 --rating 2 --useful 1,3,4
 ```
 
 An optional note can be added:
 
 ```powershell
-.\.venv\Scripts\family-kb.exe feedback 1 --rating 2 --useful 1,3,4 --note "odpověď byla složená z více částí"
+uv run family-kb feedback 1 --rating 2 --useful 1,3,4 --note "odpověď byla složená z více částí"
 ```
 
 Existing V1.2a databases are migrated automatically. A previous single `selected_rank` is preserved as one useful rank until that feedback is corrected.
@@ -64,7 +64,7 @@ Existing V1.2a databases are migrated automatically. A previous single `selected
 Export the accumulated usage data with:
 
 ```powershell
-.\.venv\Scripts\family-kb.exe export-feedback
+uv run family-kb export-feedback
 ```
 
 Default output:
@@ -76,7 +76,7 @@ evaluation/usage_feedback.jsonl
 The default export contains real queries, result metadata and feedback, including `useful_ranks`, but **does not include full retrieved chunk text**. Add `--include-text` only when the text is really needed:
 
 ```powershell
-.\.venv\Scripts\family-kb.exe export-feedback --include-text
+uv run family-kb export-feedback --include-text
 ```
 
 The JSONL export is intended for later benchmark construction and analysis. It is not automatically committed or uploaded anywhere.
