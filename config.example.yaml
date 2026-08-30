@@ -2,6 +2,7 @@ kb_path: "C:/path/to/RODINNE_KNOWHOW"
 qdrant_url: "http://localhost:6333"
 qdrant_collection: "family_kb"
 embedding_model: "intfloat/multilingual-e5-small"
+embedding_revision: "614241f622f53c4eeff9890bdc4f31cfecc418b3"
 chunk_size: 1200
 chunk_overlap: 150
 top_k: 5

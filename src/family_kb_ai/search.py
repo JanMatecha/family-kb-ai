@@ -24,7 +24,10 @@ def search(
     category: str | None = None,
 ) -> list[SearchResult]:
     limit = top_k if top_k is not None else settings.top_k
-    embedder = LocalEmbedder(settings.embedding_model)
+    embedder = LocalEmbedder(
+        settings.embedding_model,
+        revision=settings.embedding_revision,
+    )
     store = QdrantStore(settings.qdrant_url, settings.qdrant_collection)
     return search_with_components(
         query,

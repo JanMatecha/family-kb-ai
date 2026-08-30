@@ -6,6 +6,11 @@ from pathlib import Path
 import yaml
 
 
+DEFAULT_EMBEDDING_REVISIONS: dict[str, str] = {
+    "intfloat/multilingual-e5-small": "614241f622f53c4eeff9890bdc4f31cfecc418b3",
+}
+
+
 @dataclass(frozen=True)
 class Settings:
     kb_path: Path
@@ -15,6 +20,7 @@ class Settings:
     chunk_size: int
     chunk_overlap: int
     top_k: int
+    embedding_revision: str | None = None
 
 
 def load_settings(path: str | Path = "config.yaml") -> Settings:
@@ -38,14 +44,26 @@ def load_settings(path: str | Path = "config.yaml") -> Settings:
     if missing:
         raise ValueError(f"Missing config keys: {', '.join(missing)}")
 
+    embedding_model = str(raw["embedding_model"])
+    if "embedding_revision" in raw:
+        raw_revision = raw["embedding_revision"]
+        embedding_revision = (
+            str(raw_revision).strip() if raw_revision is not None else None
+        )
+        if not embedding_revision:
+            embedding_revision = None
+    else:
+        embedding_revision = DEFAULT_EMBEDDING_REVISIONS.get(embedding_model)
+
     settings = Settings(
         kb_path=Path(str(raw["kb_path"])).expanduser(),
         qdrant_url=str(raw["qdrant_url"]),
         qdrant_collection=str(raw["qdrant_collection"]),
-        embedding_model=str(raw["embedding_model"]),
+        embedding_model=embedding_model,
         chunk_size=int(raw["chunk_size"]),
         chunk_overlap=int(raw["chunk_overlap"]),
         top_k=int(raw["top_k"]),
+        embedding_revision=embedding_revision,
     )
 
     if settings.chunk_size <= 0:

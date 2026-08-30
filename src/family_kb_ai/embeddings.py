@@ -2,16 +2,25 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from .config import DEFAULT_EMBEDDING_REVISIONS
+
+
+def resolve_model_revision(model_name: str, revision: str | None = None) -> str | None:
+    if revision is not None:
+        return revision
+    return DEFAULT_EMBEDDING_REVISIONS.get(model_name)
+
 
 class LocalEmbedder:
-    """Small wrapper that keeps E5 query/passage formatting in one place."""
+    """Small wrapper that keeps model revision and E5 formatting in one place."""
 
-    def __init__(self, model_name: str) -> None:
+    def __init__(self, model_name: str, revision: str | None = None) -> None:
         from sentence_transformers import SentenceTransformer
 
         self.model_name = model_name
+        self.revision = resolve_model_revision(model_name, revision)
         self._uses_e5_prefixes = "e5" in model_name.lower()
-        self._model = SentenceTransformer(model_name)
+        self._model = SentenceTransformer(model_name, revision=self.revision)
 
     @property
     def dimension(self) -> int:

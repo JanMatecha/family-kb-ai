@@ -71,7 +71,10 @@ def ingest(settings: Settings, *, recreate: bool) -> tuple[int, int]:
     indexed_at = datetime.now(timezone.utc).isoformat()
     chunks = collect_chunks(settings, indexed_at)
 
-    embedder = LocalEmbedder(settings.embedding_model)
+    embedder = LocalEmbedder(
+        settings.embedding_model,
+        revision=settings.embedding_revision,
+    )
     store = QdrantStore(settings.qdrant_url, settings.qdrant_collection)
     index_chunks(chunks, embedder=embedder, store=store)
 
