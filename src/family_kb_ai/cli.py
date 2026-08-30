@@ -8,6 +8,21 @@ from . import __version__
 from .config import Settings, load_settings
 
 _BACK = object()
+_FAILURE_REASON_ALIASES = {
+    "k": "knowledge_gap",
+    "knowledge_gap": "knowledge_gap",
+    "r": "retrieval_failure",
+    "retrieval_failure": "retrieval_failure",
+    "s": "synthesis_needed",
+    "synthesis_needed": "synthesis_needed",
+    "q": "query_ambiguity",
+    "query_ambiguity": "query_ambiguity",
+    "?": "unknown",
+    "n": "unknown",
+    "nevím": "unknown",
+    "nevim": "unknown",
+    "unknown": "unknown",
+}
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -87,6 +102,18 @@ def build_parser() -> argparse.ArgumentParser:
         "--useful",
         default=None,
         help="Comma-separated useful result ranks, for example 1,3,4",
+    )
+    feedback_parser.add_argument(
+        "--reason",
+        choices=(
+            "knowledge_gap",
+            "retrieval_failure",
+            "synthesis_needed",
+            "query_ambiguity",
+            "unknown",
+        ),
+        default=None,
+        help="Primary reason for rating 0/1",
     )
     feedback_parser.add_argument(
         "--note",
@@ -219,6 +246,7 @@ def main() -> None:
                 rating=args.rating,
                 useful_ranks=useful_ranks,
                 note=args.note,
+                failure_reason=args.reason,
             )
             print(f"Feedback for search #{args.search_id} saved.")
             return
@@ -356,6 +384,13 @@ def _capture_usage(
             if useful_choice is _BACK:
                 continue
             useful_ranks = useful_choice
+
+        failure_reason = None
+        if rating < 2:
+            reason_choice = _prompt_failure_reason()
+            if reason_choice is _BACK:
+                continue
+            failure_reason = reason_choice
         break
 
     try:
@@ -363,6 +398,7 @@ def _capture_usage(
             search_id,
             rating=rating,
             useful_ranks=useful_ranks,
+            failure_reason=failure_reason,
         )
     except (OSError, sqlite3.Error, ValueError) as exc:
         print(f"Warning: could not save feedback: {exc}", file=sys.stderr)
@@ -413,6 +449,30 @@ def _prompt_useful_ranks(
                 f"Zadej čísla 1-{result_count} oddělená čárkou, "
                 "b pro návrat nebo Enter."
             )
+
+
+def _prompt_failure_reason() -> str | None | object:
+    while True:
+        try:
+            value = input(
+                "Pokud odpověď nebyla úplná, proč? "
+                "[k=KB chybí/neúplná, r=KB informaci má ale hledání ji nenašlo, "
+                "s=informace jsou v několika výsledcích, q=dotaz byl nejasný, "
+                "?=nevím, b=zpět, Enter=přeskočit]: "
+            ).strip()
+        except EOFError:
+            return None
+
+        if value == "":
+            return None
+        if value.casefold() in {"b", "z", "zpět", "zpet"}:
+            return _BACK
+
+        reason = _FAILURE_REASON_ALIASES.get(value.casefold())
+        if reason is not None:
+            return reason
+
+        print("Zadej k, r, s, q, ?, b nebo Enter.")
 
 
 def _parse_useful_ranks(

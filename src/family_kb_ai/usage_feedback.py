@@ -13,6 +13,13 @@ if TYPE_CHECKING:
 
 DEFAULT_DB_PATH = Path("usage_feedback.db")
 DEFAULT_EXPORT_PATH = Path("evaluation/usage_feedback.jsonl")
+FAILURE_REASONS = (
+    "knowledge_gap",
+    "retrieval_failure",
+    "synthesis_needed",
+    "query_ambiguity",
+    "unknown",
+)
 
 
 class UsageFeedbackStore:
@@ -62,6 +69,7 @@ class UsageFeedbackStore:
                     selected_rank INTEGER,
                     note TEXT,
                     created_at TEXT NOT NULL,
+                    failure_reason TEXT,
                     FOREIGN KEY (search_id) REFERENCES searches(id) ON DELETE CASCADE
                 );
 
@@ -78,7 +86,18 @@ class UsageFeedbackStore:
                 ON searches(created_at);
                 """
             )
+            self._ensure_failure_reason_column(connection)
             self._migrate_selected_rank(connection)
+
+    @staticmethod
+    def _ensure_failure_reason_column(connection: sqlite3.Connection) -> None:
+        """Add the V1.2b failure classification to existing feedback databases."""
+        columns = {
+            str(row["name"])
+            for row in connection.execute("PRAGMA table_info(feedback)").fetchall()
+        }
+        if "failure_reason" not in columns:
+            connection.execute("ALTER TABLE feedback ADD COLUMN failure_reason TEXT")
 
     @staticmethod
     def _migrate_selected_rank(connection: sqlite3.Connection) -> None:
@@ -172,9 +191,16 @@ class UsageFeedbackStore:
         rating: int,
         useful_ranks: Sequence[int] | None = None,
         note: str | None = None,
+        failure_reason: str | None = None,
     ) -> None:
         if rating not in {0, 1, 2}:
             raise ValueError("rating must be 0, 1, or 2")
+        if failure_reason is not None and failure_reason not in FAILURE_REASONS:
+            raise ValueError(
+                "failure_reason must be one of: " + ", ".join(FAILURE_REASONS)
+            )
+        if rating == 2 and failure_reason is not None:
+            raise ValueError("failure_reason is only valid for ratings 0 or 1")
 
         normalized_ranks = (
             tuple(sorted(set(useful_ranks)))
@@ -220,16 +246,18 @@ class UsageFeedbackStore:
                     rating,
                     selected_rank,
                     note,
-                    created_at
+                    created_at,
+                    failure_reason
                 )
-                VALUES (?, ?, NULL, ?, ?)
+                VALUES (?, ?, NULL, ?, ?, ?)
                 ON CONFLICT(search_id) DO UPDATE SET
                     rating = excluded.rating,
                     selected_rank = NULL,
                     note = excluded.note,
-                    created_at = excluded.created_at
+                    created_at = excluded.created_at,
+                    failure_reason = excluded.failure_reason
                 """,
-                (search_id, rating, note, _now()),
+                (search_id, rating, note, _now(), failure_reason),
             )
 
             if normalized_ranks is not None:
@@ -291,7 +319,7 @@ class UsageFeedbackStore:
                     ).fetchall()
                     feedback_row = connection.execute(
                         """
-                        SELECT rating, note, created_at
+                        SELECT rating, note, created_at, failure_reason
                         FROM feedback
                         WHERE search_id = ?
                         """,
@@ -326,6 +354,7 @@ class UsageFeedbackStore:
                                 "useful_ranks": [
                                     int(row["rank"]) for row in useful_rows
                                 ],
+                                "failure_reason": feedback_row["failure_reason"],
                                 "note": feedback_row["note"],
                                 "timestamp": feedback_row["created_at"],
                             }

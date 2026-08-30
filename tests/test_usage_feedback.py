@@ -24,7 +24,7 @@ def _record_search(store: UsageFeedbackStore, *, result_count: int = 3) -> int:
         qdrant_collection="family_kb",
         top_k=5,
         category="02_ZAHRADA",
-        app_version="0.2.1",
+        app_version="0.2.3",
         results=[_result(number) for number in range(1, result_count + 1)],
     )
 
@@ -44,9 +44,30 @@ def test_records_multiple_useful_results_and_exports_jsonl(tmp_path):
     assert payload["query"].startswith("co dělat")
     assert payload["feedback"]["rating"] == 2
     assert payload["feedback"]["useful_ranks"] == [1, 3]
+    assert payload["feedback"]["failure_reason"] is None
     assert payload["results"][0]["chunk_id"] == "chunk-1"
     assert payload["results"][0]["section_path"] == ["Zahrada", "Hadice 1"]
     assert "text" not in payload["results"][0]
+
+
+def test_feedback_stores_failure_reason(tmp_path):
+    store = UsageFeedbackStore(tmp_path / "usage_feedback.db")
+    search_id = _record_search(store)
+
+    store.record_feedback(
+        search_id,
+        rating=1,
+        useful_ranks=(3,),
+        failure_reason="knowledge_gap",
+    )
+
+    output = tmp_path / "reason.jsonl"
+    store.export_jsonl(output)
+    payload = json.loads(output.read_text(encoding="utf-8").strip())
+
+    assert payload["feedback"]["rating"] == 1
+    assert payload["feedback"]["useful_ranks"] == [3]
+    assert payload["feedback"]["failure_reason"] == "knowledge_gap"
 
 
 def test_feedback_update_replaces_useful_ranks(tmp_path):
@@ -77,7 +98,27 @@ def test_feedback_update_can_preserve_existing_useful_ranks(tmp_path):
 
     assert payload["feedback"]["rating"] == 2
     assert payload["feedback"]["useful_ranks"] == [1, 3]
+    assert payload["feedback"]["failure_reason"] is None
     assert payload["feedback"]["note"] == "corrected later"
+
+
+def test_successful_correction_clears_failure_reason(tmp_path):
+    store = UsageFeedbackStore(tmp_path / "usage_feedback.db")
+    search_id = _record_search(store)
+
+    store.record_feedback(
+        search_id,
+        rating=0,
+        failure_reason="retrieval_failure",
+    )
+    store.record_feedback(search_id, rating=2)
+
+    output = tmp_path / "cleared.jsonl"
+    store.export_jsonl(output)
+    payload = json.loads(output.read_text(encoding="utf-8").strip())
+
+    assert payload["feedback"]["rating"] == 2
+    assert payload["feedback"]["failure_reason"] is None
 
 
 def test_export_can_include_retrieved_text(tmp_path):
@@ -101,6 +142,12 @@ def test_feedback_validation(tmp_path):
     with pytest.raises(ValueError, match="no result"):
         store.record_feedback(search_id, rating=1, useful_ranks=(2,))
 
+    with pytest.raises(ValueError, match="failure_reason"):
+        store.record_feedback(search_id, rating=0, failure_reason="other")
+
+    with pytest.raises(ValueError, match="only valid"):
+        store.record_feedback(search_id, rating=2, failure_reason="knowledge_gap")
+
     with pytest.raises(ValueError, match="Unknown search_id"):
         store.record_feedback(9999, rating=0)
 
@@ -116,6 +163,9 @@ def test_database_schema_is_created(tmp_path):
                 "SELECT name FROM sqlite_master WHERE type = 'table'"
             )
         }
+        feedback_columns = {
+            row[1] for row in connection.execute("PRAGMA table_info(feedback)")
+        }
 
     assert {
         "searches",
@@ -123,6 +173,7 @@ def test_database_schema_is_created(tmp_path):
         "feedback",
         "feedback_results",
     }.issubset(tables)
+    assert "failure_reason" in feedback_columns
 
 
 def test_v12a_selected_rank_is_migrated_to_useful_results(tmp_path):
@@ -202,3 +253,8 @@ def test_v12a_selected_rank_is_migrated_to_useful_results(tmp_path):
 
     assert payload["feedback"]["rating"] == 2
     assert payload["feedback"]["useful_ranks"] == [4]
+    assert payload["feedback"]["failure_reason"] is None
+
+    with sqlite3.connect(db_path) as connection:
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(feedback)")}
+    assert "failure_reason" in columns

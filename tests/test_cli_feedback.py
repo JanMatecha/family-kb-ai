@@ -19,3 +19,21 @@ def test_useful_results_prompt_accepts_czech_back_word(monkeypatch):
     monkeypatch.setattr(builtins, "input", lambda _: "zpět")
 
     assert cli._prompt_useful_ranks(5) is cli._BACK
+
+
+def test_failure_reason_prompt_accepts_knowledge_gap(monkeypatch):
+    monkeypatch.setattr(builtins, "input", lambda _: "k")
+
+    assert cli._prompt_failure_reason() == "knowledge_gap"
+
+
+def test_failure_reason_prompt_accepts_unknown(monkeypatch):
+    monkeypatch.setattr(builtins, "input", lambda _: "?")
+
+    assert cli._prompt_failure_reason() == "unknown"
+
+
+def test_failure_reason_prompt_can_go_back(monkeypatch):
+    monkeypatch.setattr(builtins, "input", lambda _: "b")
+
+    assert cli._prompt_failure_reason() is cli._BACK
