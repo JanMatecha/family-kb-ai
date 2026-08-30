@@ -22,32 +22,51 @@ vector search / retrieval benchmark from CLI
 
 The default embedding model is `intfloat/multilingual-e5-small`. For E5 models the embedding layer applies the recommended `passage:` and `query:` prefixes. Other sentence-transformers models are embedded without E5 prefixes. Models are downloaded on first use and then run locally.
 
+## Python environment: uv
+
+The project uses **uv** for Python version selection, dependency resolution, virtual-environment management, and command execution.
+
+The repository pins Python 3.10 in `.python-version`. The local `.venv` can still exist, but it is managed by uv; activating it or installing the project with `pip install -e .` is not part of the normal workflow.
+
+Typical update workflow:
+
+```powershell
+git pull
+uv sync
+```
+
+Typical command:
+
+```powershell
+uv run family-kb search "kolik máme záhonů?"
+```
+
+Tests:
+
+```powershell
+uv run pytest
+```
+
+`uv.lock` is the reproducible dependency lock file and should be committed to Git. On the first `uv sync`, uv creates it if it is not present.
+
 ## Quick start
 
-Requirements: Python 3.10+, Docker Desktop / Docker Compose, and internet access for the first embedding-model download.
+Requirements: uv, Docker Desktop / Docker Compose, and internet access for the initial dependency and embedding-model downloads.
 
-### 1. Create a Python environment and install
+### 1. Synchronize Python environment
 
-PowerShell:
+From the repository root:
 
 ```powershell
-py -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-pip install -e .
+uv sync
 ```
 
-If PowerShell activation is blocked by execution policy, use the virtual environment explicitly:
+No PowerShell environment activation is needed.
+
+Check the CLI:
 
 ```powershell
-.\.venv\Scripts\python.exe -m pip install -e .
-.\.venv\Scripts\family-kb.exe --help
-```
-
-For development/tests:
-
-```powershell
-pip install -e ".[dev]"
+uv run family-kb --help
 ```
 
 ### 2. Start Qdrant
@@ -57,6 +76,12 @@ docker compose up -d
 ```
 
 Qdrant REST API is exposed only on the local machine at `http://localhost:6333`. The local dashboard is available at `http://localhost:6333/dashboard`.
+
+On the normal Windows notebook you can use the helper:
+
+```powershell
+.\start-family-kb.cmd
+```
 
 ### 3. Configure the external knowledge base
 
@@ -75,7 +100,7 @@ kb_path: "C:/Users/.../RODINNE_KNOWHOW"
 ### 4. Full reindex
 
 ```powershell
-family-kb ingest --recreate
+uv run family-kb ingest --recreate
 ```
 
 The current version intentionally supports an explicit full rebuild. It recursively indexes all `*.md` files under `kb_path`.
@@ -83,7 +108,7 @@ The current version intentionally supports an explicit full rebuild. It recursiv
 ### 5. Search
 
 ```powershell
-family-kb search "jak jsme řešili hadici?"
+uv run family-kb search "jak jsme řešili hadici?"
 ```
 
 Default output is TOP 5 and includes score, source path, Markdown section hierarchy, and chunk text.
@@ -91,24 +116,20 @@ Default output is TOP 5 and includes score, source path, Markdown section hierar
 Override result count or add a category filter:
 
 ```powershell
-family-kb search "jak připojit hadici" --top-k 10
-family-kb search "jak připojit hadici" --category 02_ZAHRADA
+uv run family-kb search "jak připojit hadici" --top-k 10
+uv run family-kb search "jak připojit hadici" --category 02_ZAHRADA
 ```
+
+Real searches are logged by the V1.2 pilot feedback layer unless `--no-log` is used.
 
 ## Retrieval benchmark (V1.1a)
 
 `benchmarks/retrieval_cases.yaml` contains the original 12-case retrieval baseline. It intentionally includes paraphrases such as `trubka + spojka` versus source text using `hadice + fitinky`.
 
-Run the benchmark against the currently indexed Qdrant collection:
+Run:
 
 ```powershell
-family-kb benchmark
-```
-
-On Windows without virtual-environment activation:
-
-```powershell
-.\.venv\Scripts\family-kb.exe benchmark
+uv run family-kb benchmark
 ```
 
 The command searches TOP 20 by default, prints per-case rank/score and aggregate metrics, and writes a UTF-8 report to `benchmark_results.txt`.
@@ -122,7 +143,7 @@ V1.1b compares embedding models while holding the knowledge base, chunking, benc
 Run:
 
 ```powershell
-.\.venv\Scripts\family-kb.exe compare-models
+uv run family-kb compare-models
 ```
 
 The default V1.1b models remain:
@@ -147,15 +168,10 @@ Custom models can be supplied by repeating `--model`.
 
 V1.1c is a diagnostic experiment, not a production search change.
 
-It answers two questions:
-
-1. Where does the correct chunk really rank when a TOP-20 benchmark misses it?
-2. Is the failure specific to the E5 model family, or does a different multilingual sentence-embedding family behave differently?
-
 Run:
 
 ```powershell
-.\.venv\Scripts\family-kb.exe diagnose-retrieval
+uv run family-kb diagnose-retrieval
 ```
 
 V1.1c defaults to:
@@ -173,8 +189,6 @@ The V1.1c benchmark contains the original 12 garden cases plus six cross-domain 
 - `03_AI_METODIKA`,
 - `04_KNIHARSTVI`.
 
-This keeps the original V1.1b benchmark reproducible while reducing the risk of optimizing the whole search stack only for one garden failure case.
-
 Results are written to:
 
 ```text
@@ -184,18 +198,41 @@ retrieval_diagnostics/
 └── comparison.txt
 ```
 
-For a baseline collection `family_kb`, V1.1c uses separate experiment collections such as:
+For a baseline collection `family_kb`, V1.1c uses separate experiment collections and does not change the configured baseline collection.
+
+## Pilot feedback (V1.2)
+
+Normal searches can record real usage in local `usage_feedback.db`.
+
+The interactive flow records overall success:
 
 ```text
-family_kb_diag_multilingual_e5_small
-family_kb_diag_paraphrase_multilingual_minilm_l12_v2
+2 = ano
+1 = částečně
+0 = ne
 ```
 
-The configured baseline collection is not changed.
+and allows several useful result ranks to be marked, for example:
 
-The report includes actual per-case ranks up to TOP 100 and aggregate Hit@1/3/5/10/20/100, MRR, misses, and informational runtimes.
+```text
+1,3,4
+```
 
-If the `trubka + spojka` target appears at a moderate deep rank, a later reranker experiment becomes reasonable. If it remains very deep or missed across model families, the next step should focus on the retrieval representation rather than simply increasing TOP K.
+On the useful-results question, `b` returns to the previous rating question.
+
+Correct existing feedback:
+
+```powershell
+uv run family-kb feedback 2 --rating 2 --useful 1,3
+```
+
+Export real usage for later analysis:
+
+```powershell
+uv run family-kb export-feedback
+```
+
+The export is written to `evaluation/usage_feedback.jsonl`. Review it before sharing or committing because real family queries can contain private information.
 
 ## Benchmark target matching
 
@@ -205,7 +242,7 @@ Benchmark targets can identify a source by exact relative path:
 source_path: "02_ZAHRADA/02_ZAHONY/SOUHRN_ZAHONU.md"
 ```
 
-or, for cross-domain cases where only the stable file name matters, by path suffix:
+or by path suffix:
 
 ```yaml
 source_endswith: "SOUHRN_ZEBRIKU.md"
@@ -232,10 +269,8 @@ Chunking first follows Markdown headings (`#`, `##`, `###`, ...). Long sections 
 Unit tests do not load or download embedding models and do not require a running Qdrant:
 
 ```powershell
-pytest
+uv run pytest
 ```
-
-They cover Markdown chunking, configuration, benchmark matching/metrics, deep diagnostic metrics, and model-comparison naming/report helpers.
 
 ## Intentionally out of scope
 
