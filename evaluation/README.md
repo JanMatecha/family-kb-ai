@@ -1,6 +1,6 @@
-# Pilot evaluation data (V1.2a.1)
+# Pilot evaluation data (V1.2a.2)
 
-V1.2a starts collecting **real search usage** instead of optimizing only on hand-written benchmark questions. V1.2a.1 improves the feedback model so one search can mark **multiple returned chunks as useful**.
+V1.2a starts collecting **real search usage** instead of optimizing only on hand-written benchmark questions. V1.2a.1 improves the feedback model so one search can mark **multiple returned chunks as useful**. V1.2a.2 adds a simple **back** action to the second interactive feedback question so an accidentally chosen overall rating can be corrected before saving.
 
 ## Local SQLite database
 
@@ -37,7 +37,9 @@ Které výsledky byly užitečné?
 1,3,4
 ```
 
-This is intentional: a useful answer can be distributed across several Markdown chunks.
+At this second prompt, `b` (also `z`, `zpet`, or `zpět`) returns to the overall `2/1/0` rating question without saving the feedback yet.
+
+This is intentional: a useful answer can be distributed across several Markdown chunks, and the second question can reveal that the overall rating should be changed.
 
 Use `--no-feedback` to keep logging but skip the interactive questions. Use `--no-log` for an intentionally untracked search.
 
