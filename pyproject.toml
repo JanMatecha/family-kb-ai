@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "family-kb-ai"
-version = "0.2.2"
+version = "0.2.3"
 description = "Local vector search over an external Markdown family knowledge base."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -14,7 +14,7 @@ dependencies = [
   "sentence-transformers>=3,<7",
 ]
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
   "pytest>=8,<9",
 ]
