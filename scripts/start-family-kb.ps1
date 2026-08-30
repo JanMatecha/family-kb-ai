@@ -96,19 +96,20 @@ if (-not $qdrantReady) {
 Write-Host "Qdrant: OK"
 Write-Host "Qdrant dashboard: http://localhost:6333/dashboard"
 
-$familyKb = Join-Path $repoRoot ".venv\Scripts\family-kb.exe"
-if (Test-Path $familyKb) {
-    & $familyKb --help *> $null
+if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
+    Write-Warning "uv was not found on PATH."
+    Write-Warning "Install uv, then run: uv sync"
+}
+else {
+    & uv run --no-sync family-kb --help *> $null
     if ($LASTEXITCODE -eq 0) {
+        Write-Host "uv: OK"
         Write-Host "Family KB CLI: OK"
     }
     else {
-        Write-Warning "Family KB CLI exists but returned exit code $LASTEXITCODE."
+        Write-Warning "Family KB uv environment is missing or out of sync."
+        Write-Warning "Run: uv sync"
     }
-}
-else {
-    Write-Warning "Family KB CLI was not found at: $familyKb"
-    Write-Warning "Run: .\.venv\Scripts\python.exe -m pip install -e ."
 }
 
 Write-Host ""
