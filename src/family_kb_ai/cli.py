@@ -7,6 +7,8 @@ import sys
 from . import __version__
 from .config import Settings, load_settings
 
+_BACK = object()
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="family-kb")
@@ -343,11 +345,18 @@ def _capture_usage(
     if args.no_feedback or not sys.stdin.isatty():
         return
 
-    rating = _prompt_rating()
-    if rating is None:
-        return
+    while True:
+        rating = _prompt_rating()
+        if rating is None:
+            return
 
-    useful_ranks = _prompt_useful_ranks(len(results)) if results else None
+        useful_ranks = None
+        if results:
+            useful_choice = _prompt_useful_ranks(len(results))
+            if useful_choice is _BACK:
+                continue
+            useful_ranks = useful_choice
+        break
 
     try:
         store.record_feedback(
@@ -379,25 +388,30 @@ def _prompt_rating() -> int | None:
         print("Zadej 2, 1, 0 nebo Enter.")
 
 
-def _prompt_useful_ranks(result_count: int) -> tuple[int, ...] | None:
+def _prompt_useful_ranks(
+    result_count: int,
+) -> tuple[int, ...] | None | object:
     while True:
         try:
             value = input(
                 "Které výsledky byly užitečné? "
-                f"[např. 1,3,4; rozsah 1-{result_count}; Enter=přeskočit]: "
+                f"[např. 1,3,4; rozsah 1-{result_count}; "
+                "b=zpět; Enter=přeskočit]: "
             ).strip()
         except EOFError:
             return None
 
         if value == "":
             return None
+        if value.casefold() in {"b", "z", "zpět", "zpet"}:
+            return _BACK
 
         try:
             return _parse_useful_ranks(value, max_rank=result_count)
         except ValueError:
             print(
-                f"Zadej čísla 1-{result_count} oddělená čárkou "
-                "nebo Enter."
+                f"Zadej čísla 1-{result_count} oddělená čárkou, "
+                "b pro návrat nebo Enter."
             )
 
 
